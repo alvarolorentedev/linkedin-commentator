@@ -26,6 +26,19 @@ chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: (
     // Asynchronous response: return true to keep the message channel open
     (async () => {
       const postText: string = message.postText || '';
+      // helper to read from chrome.storage.sync as a promise
+      const getStorage = (keys: any) => new Promise<any>((resolve) => {
+        try {
+          chrome.storage.sync.get(keys, (items: any) => resolve(items));
+        } catch (e) {
+          resolve(keys);
+        }
+      });
+
+      // Load prompt/tone settings (provide safe defaults)
+      const settings = await getStorage({ commentTone: 'friendly', commentPrompt: '' });
+      const tone = (settings && settings.commentTone) ? settings.commentTone : 'friendly';
+      const customPrompt = (settings && settings.commentPrompt) ? settings.commentPrompt : '';
       try {
         // Prefer the Prompt API LanguageModel if available
         const LM = (globalThis as any).LanguageModel;
@@ -46,7 +59,9 @@ chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: (
 
           const session = await LM.create();
           try {
-            const prompt = `Write a short, friendly, professional LinkedIn comment (1-2 sentences) in response to the following post content. Keep it positive and concise.\n\nPost:\n${postText}`;
+            const defaultPrompt = `Write a short, friendly, professional LinkedIn comment (1-2 sentences) in response to the following post content. Keep it positive and concise.`;
+            const basePrompt = customPrompt && customPrompt.trim().length ? customPrompt : defaultPrompt;
+            const prompt = `${basePrompt}\n\nTone: ${tone}\n\nPost:\n${postText}`;
             // session.prompt may return a string or an object depending on environment
             const result = await session.prompt(prompt);
             sendResponse({ comment: (result || '').toString().trim() });
@@ -59,9 +74,11 @@ chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: (
         }
 
         // Fallback: older chrome.ai.generate shape if present
-  const chromeAny = (chrome as any);
-  if (chromeAny.ai && typeof chromeAny.ai.generate === 'function') {
-          const prompt = `Write a short, friendly, professional LinkedIn comment (1-2 sentences) in response to the following post content. Keep it positive and concise.\n\nPost:\n${postText}`;
+        const chromeAny = (chrome as any);
+        if (chromeAny.ai && typeof chromeAny.ai.generate === 'function') {
+          const defaultPrompt = `Write a short, friendly, professional LinkedIn comment (1-2 sentences) in response to the following post content. Keep it positive and concise.`;
+          const basePrompt = customPrompt && customPrompt.trim().length ? customPrompt : defaultPrompt;
+          const prompt = `${basePrompt}\n\nTone: ${tone}\n\nPost:\n${postText}`;
           const response = await chromeAny.ai.generate({ model: 'gen-1', prompt, max_output_tokens: 256 });
           let text = '';
           if (response && response.output_text) text = response.output_text.trim();
