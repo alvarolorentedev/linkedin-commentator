@@ -1,3 +1,4 @@
+/// <reference types="chrome" />
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -10,13 +11,13 @@ const Popup = () => {
   }, [count]);
 
   useEffect(() => {
-    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs: chrome.tabs.Tab[]) {
       setCurrentURL(tabs[0].url);
     });
   }, []);
 
   const changeBackground = () => {
-    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs: chrome.tabs.Tab[]) {
       const tab = tabs[0];
       if (tab.id) {
         chrome.tabs.sendMessage(
@@ -24,7 +25,7 @@ const Popup = () => {
           {
             color: "#555555",
           },
-          (msg) => {
+          (msg: any) => {
             console.log("result message:", msg);
           }
         );
