@@ -3,7 +3,7 @@
 
   "name": "LinkedIn Commentator",
   "description": "Generate friendly LinkedIn comments using a local or built-in AI model and insert them into the composer.",
-  "version": "0.1.0",
+  "version": "0.1.1",
 
   "options_ui": {
     "page": "options.html"
@@ -27,9 +27,7 @@
 
   "permissions": [
     "storage",
-    "tabs",
-    "activeTab",
-    "scripting"
+    "activeTab"
   ],
 
   "host_permissions": [
