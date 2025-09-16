@@ -52,6 +52,77 @@ function findCommentComposer(postEl: HTMLElement | null): HTMLElement | null {
   return document.querySelector('[contenteditable][role="textbox"]');
 }
 
+// Check whether a built-in AI API is available in this browser runtime
+function isBuiltinAIAvailable(): boolean {
+  try {
+    const gg = (globalThis as any);
+    if (typeof gg.LanguageModel !== 'undefined' && gg.LanguageModel) return true;
+    if (typeof (chrome as any) !== 'undefined' && (chrome as any).ai && typeof (chrome as any).ai.generate === 'function') return true;
+  } catch (e) { /* ignore */ }
+  return false;
+}
+
+// Show an in-page modal explaining how to enable built-in AI features
+function showEnableAIModal() {
+  if (document.getElementById('lc-enable-ai-modal')) return;
+
+  const style = document.createElement('style');
+  style.id = 'lc-enable-ai-style';
+  style.textContent = `
+    #lc-enable-ai-modal { position: fixed; left: 12px; right: 12px; top: 80px; max-width: 720px; margin: 0 auto; z-index: 2147483647; }
+    .lc-enable-ai-card { background: #fff; border-radius: 8px; box-shadow: 0 12px 40px rgba(11,37,69,0.12); padding: 16px; color: #0b2545; font-family: Inter, Roboto, system-ui, -apple-system, 'Segoe UI', Arial; }
+    .lc-enable-ai-card h3 { margin: 0 0 8px 0; font-size: 16px; }
+    .lc-enable-ai-card p { margin: 6px 0; font-size: 13px; line-height: 1.3; }
+  .lc-enable-ai-card pre { background: #f6f9ff; padding: 10px; border-radius: 6px; overflow: auto; font-size: 12px; }
+  /* right-align the close button */
+  .lc-enable-ai-close { display:inline-block; margin-top:8px; padding:6px 10px; border-radius:6px; background:#0a66c2; color:#fff; cursor:pointer; border:none; float:right; }
+  `;
+  document.head.appendChild(style);
+
+  const modal = document.createElement('div');
+  modal.id = 'lc-enable-ai-modal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+
+  const card = document.createElement('div');
+  card.className = 'lc-enable-ai-card';
+
+  const title = document.createElement('h3');
+  title.textContent = 'Enable Chrome built-in AI features';
+  card.appendChild(title);
+
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <p>This extension uses Chrome's built-in Translation API and Gemini Nano AI, which requires Chrome v138 or newer and the Experimental Web Platform features enabled.</p>
+    <p>Follow these steps to enable the required components:</p>
+    <pre>
+Download and install Chrome with built-in AI Latest Version.
+Go to chrome://flags/#enable-experimental-web-platform-features and enable the Experimental Web Platform features option.
+Go to chrome://flags/#translation-api and enable the Translation API option.
+Go to chrome://flags/#language-detection-api and enable the Language Detection API option (for automatic language detection).
+Go to chrome://flags/#prompt-api-for-gemini-nano and enable the Prompt API for Gemini Nano option.
+Go to chrome://flags/#optimization-guide-on-device-model and enable the Enables optimization guide on device option.
+Go to chrome://components/ and check or download the latest version of Optimization Guide On Device Model.
+Restart Chrome browser to apply changes.
+    </pre>
+  `;
+  card.appendChild(body);
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'lc-enable-ai-close';
+  closeBtn.textContent = 'Close';
+  closeBtn.onclick = () => {
+    try { modal.remove(); } catch (e) { /* ignore */ }
+    try { style.remove(); } catch (e) { /* ignore */ }
+  };
+  card.appendChild(closeBtn);
+
+  modal.appendChild(card);
+  document.body.appendChild(modal);
+  // focus the close button for accessibility
+  closeBtn.focus();
+}
+
 async function generateAndInsertComment(postEl: HTMLElement | null) {
   const postText = extractPostText(postEl);
   if (!postText) return;
@@ -200,7 +271,13 @@ document.addEventListener('click', (e) => {
   if (aria === 'comment' || aria.includes('comment')) {
     const post = findPostContainer(btn);
     if (post) {
-      setTimeout(() => generateAndInsertComment(post), 600);
+      setTimeout(() => {
+        if (!isBuiltinAIAvailable()) {
+          showEnableAIModal();
+          return;
+        }
+        generateAndInsertComment(post);
+      }, 600);
     }
   }
 });

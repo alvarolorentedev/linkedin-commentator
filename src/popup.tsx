@@ -71,6 +71,8 @@ const styles = {
 const Popup = () => {
   const [tone, setTone] = useState<string>('friendly');
   const [promptText, setPromptText] = useState<string>('Write a short, friendly, professional LinkedIn comment (1-2 sentences) in response to the following post content. Keep it positive and concise.');
+  const [aiAvailable, setAIAvailable] = useState<boolean | null>(null);
+  const [dismissed, setDismissed] = useState(false);
 
   // Load saved prompt and tone on popup open
   useEffect(() => {
@@ -81,6 +83,17 @@ const Popup = () => {
         if (items.commentPrompt) setPromptText(items.commentPrompt);
       }
     );
+  }, []);
+
+  // Check built-in AI availability for this browser and show instructions if missing
+  useEffect(() => {
+    try {
+      const gg = (globalThis as any);
+      const available = (typeof gg.LanguageModel !== 'undefined' && gg.LanguageModel) || ((chrome as any)?.ai && typeof (chrome as any).ai.generate === 'function');
+      setAIAvailable(Boolean(available));
+    } catch (e) {
+      setAIAvailable(false);
+    }
   }, []);
 
   const saveSettings = () => {
@@ -98,6 +111,28 @@ const Popup = () => {
       console.log('Reset tone and prompt to defaults');
     });
   };
+  // If AI is unavailable and the user hasn't dismissed the notice, render only the instructions.
+  if (aiAvailable === false && !dismissed) {
+    return (
+      <div style={{ ...styles.container, width: 420 }}>
+        <div style={styles.card}>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>Enable Chrome built-in AI features</div>
+          <div style={{ fontSize: 13, marginBottom: 12 }}>This extension requires Chrome's built-in Translation API and Gemini Nano AI (Chrome v138+). Please enable the platform flags and components listed below, then restart Chrome.</div>
+
+          <ol style={{ fontSize: 13, lineHeight: 1.4, paddingLeft: 18 }}>
+            <li>Download and install a Chrome build that includes built-in AI (v138+).</li>
+            <li>Open <code>chrome://flags/#enable-experimental-web-platform-features</code> and enable "Experimental Web Platform features".</li>
+            <li>Open <code>chrome://flags/#translation-api</code> and enable the Translation API flag.</li>
+            <li>Open <code>chrome://flags/#language-detection-api</code> and enable the Language Detection API flag.</li>
+            <li>Open <code>chrome://flags/#prompt-api-for-gemini-nano</code> and enable the Prompt API for Gemini Nano.</li>
+            <li>Open <code>chrome://flags/#optimization-guide-on-device-model</code> and enable the Optimization Guide on Device Model flag.</li>
+            <li>Visit <code>chrome://components</code>, locate "Optimization Guide On Device Model" (or similar) and update it if an update is available.</li>
+            <li>Restart Chrome to apply all changes.</li>
+          </ol>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.container}>
