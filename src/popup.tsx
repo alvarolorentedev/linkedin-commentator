@@ -1,5 +1,5 @@
 /// <reference types="chrome" />
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { createRoot } from "react-dom/client";
 
 const styles = {
@@ -73,6 +73,8 @@ const Popup = () => {
   const [promptText, setPromptText] = useState<string>('Write a short, friendly, professional LinkedIn comment (1-2 sentences) in response to the following post content. Keep it positive and concise.');
   const [aiAvailable, setAIAvailable] = useState<boolean | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  const [status, setStatus] = useState<string>("");
+  const statusTimerRef = useRef<number | null>(null);
 
   // Load saved prompt and tone on popup open
   useEffect(() => {
@@ -97,6 +99,10 @@ const Popup = () => {
   }, []);
 
   const saveSettings = () => {
+    // optimistic feedback: show immediately so user sees a response even if storage is slow
+    setStatus('Settings saved.');
+    if (statusTimerRef.current) window.clearTimeout(statusTimerRef.current);
+    statusTimerRef.current = window.setTimeout(() => setStatus(''), 1500);
     chrome.storage.sync.set({ commentTone: tone, commentPrompt: promptText }, () => {
       console.log('Saved tone and prompt');
     });
@@ -107,10 +113,20 @@ const Popup = () => {
     const defaultPrompt = 'Write a short, friendly, professional LinkedIn comment (1-2 sentences) in response to the following post content. Keep it positive and concise.';
     setTone(defaultTone);
     setPromptText(defaultPrompt);
+    // optimistic feedback for reset as well
+    setStatus('Settings reset to defaults.');
+    if (statusTimerRef.current) window.clearTimeout(statusTimerRef.current);
+    statusTimerRef.current = window.setTimeout(() => setStatus(''), 1500);
     chrome.storage.sync.set({ commentTone: defaultTone, commentPrompt: defaultPrompt }, () => {
       console.log('Reset tone and prompt to defaults');
     });
   };
+
+  useEffect(() => {
+    return () => {
+      if (statusTimerRef.current) window.clearTimeout(statusTimerRef.current);
+    };
+  }, []);
   // If AI is unavailable and the user hasn't dismissed the notice, render only the instructions.
   if (aiAvailable === false && !dismissed) {
     return (
@@ -163,6 +179,11 @@ const Popup = () => {
           <button style={styles.btnPrimary} onClick={saveSettings}>Save</button>
           <button style={styles.btnSecondary} onClick={resetDefaults}>Reset</button>
         </div>
+        {status && (
+          <div style={{ marginTop: 10, padding: '8px 10px', background: '#e6fbf1', color: '#0b6b3a', borderRadius: 6, fontSize: 13, fontWeight: 600 }}>
+            {status}
+          </div>
+        )}
       </div>
     </div>
   );
