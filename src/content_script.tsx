@@ -1,21 +1,8 @@
 // content script injected into LinkedIn pages (translated to TypeScript)
-console.log('LinkedIn Commentator content script loaded');
-
-const DEBUG = true;
-
-function debugLog(message: string, data?: any) {
-  if (!DEBUG) return;
-  if (typeof data === 'undefined') {
-    console.log(`[LinkedIn Commentator] ${message}`);
-    return;
-  }
-  console.log(`[LinkedIn Commentator] ${message}`, data);
-}
 
 // Keep the simple message handler sample
 chrome.runtime.onMessage.addListener(function (msg: any, sender: any, sendResponse: (resp?: any) => void) {
   if (msg.color) {
-    console.log('Receive color = ' + msg.color);
     (document.body.style as any).backgroundColor = msg.color;
     sendResponse('Change color to ' + msg.color);
   } else {
@@ -36,12 +23,12 @@ function findPostContainer(el: HTMLElement | null): HTMLElement | null {
         (cur as any).dataset?.urn
       )
     ) {
-      debugLog('Post container found', { tagName: cur.tagName, role: cur.getAttribute('role') });
+      // post container found
       return cur;
     }
     cur = cur.parentElement;
   }
-  debugLog('No post container found');
+  // no post container found
   return null;
 }
 
@@ -69,13 +56,11 @@ function extractPostText(postEl: HTMLElement | null): string {
     const candidate = postEl.querySelector(selector) as HTMLElement | null;
     const text = extractVisibleText(candidate);
     if (text) {
-      debugLog('Post text extracted from selector', { selector, preview: text.slice(0, 180) });
       return text;
     }
   }
 
   const fallbackText = extractVisibleText(postEl);
-  debugLog('Post text extracted from fallback container', { preview: fallbackText.slice(0, 180) });
   return fallbackText;
 }
 
@@ -92,7 +77,6 @@ function findCommentComposer(postEl: HTMLElement | null): HTMLElement | null {
   for (const selector of selectors) {
     const composer = postEl.querySelector(selector) as HTMLElement | null;
     if (composer) {
-      debugLog('Composer found inside post', { selector });
       return composer;
     }
   }
@@ -100,12 +84,9 @@ function findCommentComposer(postEl: HTMLElement | null): HTMLElement | null {
   for (const selector of selectors) {
     const composer = document.querySelector(selector) as HTMLElement | null;
     if (composer) {
-      debugLog('Composer found in document', { selector });
       return composer;
     }
   }
-
-  debugLog('Composer not found');
   return null;
 }
 
@@ -267,11 +248,11 @@ Restart Chrome browser to apply changes.
 async function generateAndInsertComment(postEl: HTMLElement | null) {
   const postText = extractPostText(postEl);
   if (!postText) {
-    debugLog('Generation aborted because no post text was extracted');
+    // generation aborted: no post text was extracted
     return;
   }
 
-  debugLog('Starting comment generation', { postPreview: postText.slice(0, 180) });
+  // starting comment generation
 
   const buttons = Array.from((postEl || document).querySelectorAll('button')) as HTMLButtonElement[];
   const commentBtn = buttons.find(b => {
@@ -282,10 +263,7 @@ async function generateAndInsertComment(postEl: HTMLElement | null) {
 
   let composer = findCommentComposer(postEl);
 
-  debugLog('Generation targets resolved', {
-    hasCommentButton: Boolean(commentBtn),
-    hasComposer: Boolean(composer),
-  });
+  // generation targets resolved
 
   if (!document.getElementById('lc-spinner-style')) {
     const s = document.createElement('style');
@@ -326,21 +304,15 @@ async function generateAndInsertComment(postEl: HTMLElement | null) {
     const basePrompt = customPrompt.trim().length ? customPrompt : defaultPrompt;
     const prompt = `${basePrompt}\n\nTone: ${tone}\n\nPost content:\n${postText}`;
 
-    debugLog('Prompt assembled', {
-      tone,
-      hasCustomPrompt: Boolean(customPrompt.trim().length),
-      promptPreview: prompt.slice(0, 260),
-    });
+    // prompt assembled
 
     let comment = '';
     const LM = (globalThis as any).LanguageModel;
     if (typeof LM !== 'undefined' && LM) {
-      debugLog('Using LanguageModel API');
       const session = await LM.create();
       try {
         const result = await session.prompt(prompt);
         comment = (result || '').toString().trim();
-        debugLog('LanguageModel response received', { commentPreview: comment.slice(0, 180) });
       } finally {
         if (session && typeof session.destroy === 'function') {
           try { await session.destroy(); } catch (e) { /* ignore */ }
@@ -349,60 +321,55 @@ async function generateAndInsertComment(postEl: HTMLElement | null) {
     } else {
       const chromeAny = chrome as any;
       if (chromeAny.ai && typeof chromeAny.ai.generate === 'function') {
-        debugLog('Using chrome.ai.generate fallback');
         const response = await chromeAny.ai.generate({ model: 'gen-1', prompt, max_output_tokens: 256 });
         if (response && response.output_text) comment = response.output_text.trim();
         else if (response && Array.isArray(response.output) && response.output.length) {
           comment = response.output.map((o: any) => (o.content || []).map((c: any) => c.text || '').join('')).join('\n').trim();
         }
-        debugLog('chrome.ai.generate response received', { commentPreview: comment.slice(0, 180) });
       } else {
-        debugLog('No compatible built-in AI API available in this context');
         throw new Error('No compatible built-in AI API available');
       }
     }
 
     if (!comment) {
-      debugLog('AI returned an empty comment');
+      // AI returned an empty comment
       restoreUI();
       return;
     }
 
     if (!composer) {
-      debugLog('Composer missing before insertion, waiting for it to render');
+      // composer missing before insertion, wait for it to render
       composer = await waitForCommentComposer(postEl, 5000);
-      debugLog('Composer wait finished', { hasComposer: Boolean(composer) });
     }
 
     if (!composer) {
       console.warn('Could not find comment composer');
-      debugLog('Insertion aborted because the composer was not found');
       restoreUI();
       return;
     }
 
     try {
       if ((composer as any).isContentEditable) {
-        debugLog('Inserting into contenteditable composer');
+        // inserting into contenteditable composer
         (composer as HTMLElement).focus();
         (composer as HTMLElement).innerText = comment;
         composer.dispatchEvent(new InputEvent('input', { bubbles: true }));
       } else if (composer.tagName === 'TEXTAREA' || composer.tagName === 'INPUT') {
-        debugLog('Inserting into input/textarea composer');
+        // inserting into input/textarea composer
         (composer as HTMLInputElement).value = comment;
         composer.dispatchEvent(new Event('input', { bubbles: true }));
       } else {
-        debugLog('Inserting via textContent fallback');
+        // inserting via textContent fallback
         composer.textContent = comment as string;
       }
-      debugLog('Comment insertion complete', { insertedPreview: comment.slice(0, 180) });
+      // comment insertion complete
     } catch (e) {
       console.warn('Failed to insert comment into composer', e);
-      debugLog('Comment insertion failed', e);
+      // comment insertion failed
     }
   } catch (err) {
     console.warn('AI generation error:', err);
-    debugLog('AI generation failed', err);
+    // AI generation failed
   } finally {
     restoreUI();
   }
@@ -414,21 +381,15 @@ document.addEventListener('click', (e) => {
   const btn = target && target.closest ? target.closest('button') as HTMLButtonElement | null : null;
   if (!btn) return;
   if (isCommentButton(btn)) {
-    debugLog('Comment button click detected', {
-      ariaLabel: btn.getAttribute('aria-label'),
-      text: (btn.innerText || btn.textContent || '').slice(0, 120),
-    });
+    // comment button click detected
     const post = findPostContainer(btn);
     if (post) {
       showTransientNotice('Generating comment...');
-      debugLog('Attempting comment generation after click');
       if (!isBuiltinAIAvailable()) {
-        debugLog('Built-in AI unavailable check failed');
         showTransientNotice('Chrome built-in AI is unavailable in this context.', 'error');
         showEnableAIModal();
         return;
       }
-      debugLog('Built-in AI available, starting generation');
       generateAndInsertComment(post);
     }
   }

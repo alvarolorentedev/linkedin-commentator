@@ -104,7 +104,7 @@ const Popup = () => {
     if (statusTimerRef.current) window.clearTimeout(statusTimerRef.current);
     statusTimerRef.current = window.setTimeout(() => setStatus(''), 1500);
     chrome.storage.sync.set({ commentTone: tone, commentPrompt: promptText }, () => {
-      console.log('Saved tone and prompt');
+      // settings saved
     });
   };
 
@@ -118,7 +118,7 @@ const Popup = () => {
     if (statusTimerRef.current) window.clearTimeout(statusTimerRef.current);
     statusTimerRef.current = window.setTimeout(() => setStatus(''), 1500);
     chrome.storage.sync.set({ commentTone: defaultTone, commentPrompt: defaultPrompt }, () => {
-      console.log('Reset tone and prompt to defaults');
+      // settings reset to defaults
     });
   };
 

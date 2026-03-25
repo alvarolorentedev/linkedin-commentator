@@ -10,7 +10,7 @@ function polling() {
 polling();
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('LinkedIn Commentator extension installed');
+  // extension installed
 });
 // AnyObject is declared in src/types.d.ts
 
