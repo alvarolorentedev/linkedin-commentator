@@ -1,34 +1,15 @@
-// content script injected into LinkedIn pages (translated to TypeScript)
-
-// Keep the simple message handler sample
-chrome.runtime.onMessage.addListener(function (msg: any, sender: any, sendResponse: (resp?: any) => void) {
-  if (msg.color) {
-    (document.body.style as any).backgroundColor = msg.color;
-    sendResponse('Change color to ' + msg.color);
-  } else {
-    sendResponse('Color message is none.');
-  }
-});
-
-// Utility: find the nearest post container for a given element
 function findPostContainer(el: HTMLElement | null): HTMLElement | null {
-  let cur: HTMLElement | null = el;
-  while (cur && cur !== document.body) {
+  for (let current = el; current && current !== document.body; current = current.parentElement) {
     if (
-      cur.tagName &&
-      (
-        cur.tagName.toLowerCase() === 'article' ||
-        cur.getAttribute('role') === 'article' ||
-        cur.getAttribute('role') === 'listitem' ||
-        (cur as any).dataset?.urn
-      )
+      current.tagName.toLowerCase() === 'article' ||
+      current.getAttribute('role') === 'article' ||
+      current.getAttribute('role') === 'listitem' ||
+      Boolean((current as HTMLElement).dataset?.urn)
     ) {
-      // post container found
-      return cur;
+      return current;
     }
-    cur = cur.parentElement;
   }
-  // no post container found
+
   return null;
 }
 
@@ -36,13 +17,10 @@ function extractVisibleText(node: HTMLElement | null): string {
   if (!node) return '';
 
   const clone = node.cloneNode(true) as HTMLElement;
-  clone.querySelectorAll('button, script, style, svg, noscript').forEach(n => n.remove());
-
-  const text = (clone.innerText || clone.textContent || '').replace(/\s+/g, ' ').trim();
-  return text;
+  clone.querySelectorAll('button, script, style, svg, noscript').forEach((element) => element.remove());
+  return (clone.innerText || clone.textContent || '').replace(/\s+/g, ' ').trim();
 }
 
-// Extract visible text content from a post container
 function extractPostText(postEl: HTMLElement | null): string {
   if (!postEl) return '';
 
@@ -55,16 +33,12 @@ function extractPostText(postEl: HTMLElement | null): string {
   for (const selector of selectors) {
     const candidate = postEl.querySelector(selector) as HTMLElement | null;
     const text = extractVisibleText(candidate);
-    if (text) {
-      return text;
-    }
+    if (text) return text;
   }
 
-  const fallbackText = extractVisibleText(postEl);
-  return fallbackText;
+  return extractVisibleText(postEl);
 }
 
-// Find or create the comment input area within a post
 function findCommentComposer(postEl: HTMLElement | null): HTMLElement | null {
   if (!postEl) return null;
 
@@ -76,53 +50,49 @@ function findCommentComposer(postEl: HTMLElement | null): HTMLElement | null {
 
   for (const selector of selectors) {
     const composer = postEl.querySelector(selector) as HTMLElement | null;
-    if (composer) {
-      return composer;
-    }
+    if (composer) return composer;
   }
 
   for (const selector of selectors) {
     const composer = document.querySelector(selector) as HTMLElement | null;
-    if (composer) {
-      return composer;
-    }
+    if (composer) return composer;
   }
+
   return null;
 }
 
-async function waitForCommentComposer(postEl: HTMLElement | null, timeoutMs: number = 5000): Promise<HTMLElement | null> {
+async function waitForCommentComposer(postEl: HTMLElement | null, timeoutMs = 5000): Promise<HTMLElement | null> {
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < timeoutMs) {
     const composer = findCommentComposer(postEl);
     if (composer) return composer;
-    await new Promise(resolve => window.setTimeout(resolve, 150));
+    await new Promise((resolve) => window.setTimeout(resolve, 150));
   }
 
   return null;
 }
 
-function isCommentButton(btn: HTMLButtonElement): boolean {
-  const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
-  if (aria === 'comment' || aria.includes('comment')) return true;
+function isCommentButton(button: HTMLButtonElement): boolean {
+  const ariaLabel = (button.getAttribute('aria-label') || '').toLowerCase();
+  if (ariaLabel.includes('comment')) return true;
 
-  const text = (btn.innerText || btn.textContent || '').toLowerCase();
+  const text = (button.innerText || button.textContent || '').toLowerCase();
   if (text.includes('comment')) return true;
 
-  return Boolean(btn.querySelector('svg#comment-small'));
+  return Boolean(button.querySelector('svg#comment-small'));
 }
 
-function setCommentButtonLoadingState(commentBtn: HTMLButtonElement) {
-  if (commentBtn.getAttribute('data-lc-loading') === '1') return;
+function setCommentButtonLoadingState(button: HTMLButtonElement) {
+  if (button.getAttribute('data-lc-loading') === '1') return;
 
-  commentBtn.setAttribute('data-lc-loading', '1');
-  commentBtn.setAttribute('data-lc-prev-disabled', commentBtn.disabled ? '1' : '0');
-  commentBtn.setAttribute('data-lc-prev-innerhtml', commentBtn.innerHTML);
-  commentBtn.setAttribute('data-lc-prev-aria-label', commentBtn.getAttribute('aria-label') || '');
-  commentBtn.disabled = true;
-  commentBtn.setAttribute('data-lc-disabled', '1');
-  commentBtn.setAttribute('aria-busy', 'true');
-  commentBtn.innerHTML = `
+  button.setAttribute('data-lc-loading', '1');
+  button.setAttribute('data-lc-prev-disabled', button.disabled ? '1' : '0');
+  button.setAttribute('data-lc-prev-innerhtml', button.innerHTML);
+  button.setAttribute('data-lc-prev-aria-label', button.getAttribute('aria-label') || '');
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  button.innerHTML = `
     <span class="lc-commenting-state" aria-hidden="true">
       <span class="lc-spinner" aria-hidden="true"></span>
       <span class="lc-spinner-text">Commenting…</span>
@@ -130,37 +100,36 @@ function setCommentButtonLoadingState(commentBtn: HTMLButtonElement) {
   `;
 }
 
-function restoreCommentButtonState(commentBtn: HTMLButtonElement) {
-  try {
-    const prevDisabled = commentBtn.getAttribute('data-lc-prev-disabled');
-    const prevInnerHtml = commentBtn.getAttribute('data-lc-prev-innerhtml');
-    const prevAriaLabel = commentBtn.getAttribute('data-lc-prev-aria-label');
+function restoreCommentButtonState(button: HTMLButtonElement) {
+  const prevDisabled = button.getAttribute('data-lc-prev-disabled');
+  const prevInnerHtml = button.getAttribute('data-lc-prev-innerhtml');
+  const prevAriaLabel = button.getAttribute('data-lc-prev-aria-label');
 
-    if (prevInnerHtml !== null) commentBtn.innerHTML = prevInnerHtml;
-    if (prevDisabled === '1') commentBtn.disabled = true; else commentBtn.disabled = false;
-    if (prevAriaLabel !== null) commentBtn.setAttribute('aria-label', prevAriaLabel);
+  if (prevInnerHtml !== null) button.innerHTML = prevInnerHtml;
+  button.disabled = prevDisabled === '1';
+  if (prevAriaLabel !== null) button.setAttribute('aria-label', prevAriaLabel);
 
-    commentBtn.removeAttribute('data-lc-loading');
-    commentBtn.removeAttribute('data-lc-disabled');
-    commentBtn.removeAttribute('data-lc-prev-disabled');
-    commentBtn.removeAttribute('data-lc-prev-innerhtml');
-    commentBtn.removeAttribute('data-lc-prev-aria-label');
-    commentBtn.removeAttribute('aria-busy');
-  } catch (e) { /* ignore */ }
+  button.removeAttribute('data-lc-loading');
+  button.removeAttribute('data-lc-prev-disabled');
+  button.removeAttribute('data-lc-prev-innerhtml');
+  button.removeAttribute('data-lc-prev-aria-label');
+  button.removeAttribute('aria-busy');
 }
 
 function showTransientNotice(message: string, kind: 'info' | 'error' = 'info') {
   const existing = document.getElementById('lc-transient-notice');
   if (existing) existing.remove();
 
-  const style = document.createElement('style');
-  style.id = 'lc-transient-notice-style';
-  style.textContent = `
-    #lc-transient-notice { position: fixed; right: 16px; bottom: 16px; z-index: 2147483647; max-width: 340px; padding: 10px 12px; border-radius: 10px; font: 600 13px/1.35 Inter, Roboto, system-ui, -apple-system, 'Segoe UI', Arial; box-shadow: 0 12px 40px rgba(11,37,69,0.18); color: #fff; }
-    #lc-transient-notice[data-kind='info'] { background: #0a66c2; }
-    #lc-transient-notice[data-kind='error'] { background: #b42318; }
-  `;
-  if (!document.getElementById('lc-transient-notice-style')) document.head.appendChild(style);
+  if (!document.getElementById('lc-transient-notice-style')) {
+    const style = document.createElement('style');
+    style.id = 'lc-transient-notice-style';
+    style.textContent = `
+      #lc-transient-notice { position: fixed; right: 16px; bottom: 16px; z-index: 2147483647; max-width: 340px; padding: 10px 12px; border-radius: 10px; font: 600 13px/1.35 Inter, Roboto, system-ui, -apple-system, 'Segoe UI', Arial; box-shadow: 0 12px 40px rgba(11,37,69,0.18); color: #fff; }
+      #lc-transient-notice[data-kind='info'] { background: #0a66c2; }
+      #lc-transient-notice[data-kind='error'] { background: #b42318; }
+    `;
+    document.head.appendChild(style);
+  }
 
   const notice = document.createElement('div');
   notice.id = 'lc-transient-notice';
@@ -168,38 +137,32 @@ function showTransientNotice(message: string, kind: 'info' | 'error' = 'info') {
   notice.textContent = message;
   document.body.appendChild(notice);
 
-  window.setTimeout(() => {
-    try { notice.remove(); } catch (e) { /* ignore */ }
-    try { style.remove(); } catch (e) { /* ignore */ }
-  }, 2500);
+  window.setTimeout(() => notice.remove(), 2500);
 }
 
-// Check whether a built-in AI API is available in this browser runtime
 function isBuiltinAIAvailable(): boolean {
-  try {
-    const gg = (globalThis as any);
-    if (typeof gg.LanguageModel !== 'undefined' && gg.LanguageModel) return true;
-    if (typeof (chrome as any) !== 'undefined' && (chrome as any).ai && typeof (chrome as any).ai.generate === 'function') return true;
-  } catch (e) { /* ignore */ }
-  return false;
+  const globalAny = globalThis as any;
+  const chromeAny = chrome as any;
+  return Boolean(globalAny.LanguageModel) || Boolean(chromeAny?.ai && typeof chromeAny.ai.generate === 'function');
 }
 
-// Show an in-page modal explaining how to enable built-in AI features
 function showEnableAIModal() {
   if (document.getElementById('lc-enable-ai-modal')) return;
 
-  const style = document.createElement('style');
-  style.id = 'lc-enable-ai-style';
-  style.textContent = `
-    #lc-enable-ai-modal { position: fixed; left: 12px; right: 12px; top: 80px; max-width: 720px; margin: 0 auto; z-index: 2147483647; }
-    .lc-enable-ai-card { background: #fff; border-radius: 8px; box-shadow: 0 12px 40px rgba(11,37,69,0.12); padding: 16px; color: #0b2545; font-family: Inter, Roboto, system-ui, -apple-system, 'Segoe UI', Arial; }
-    .lc-enable-ai-card h3 { margin: 0 0 8px 0; font-size: 16px; }
-    .lc-enable-ai-card p { margin: 6px 0; font-size: 13px; line-height: 1.3; }
-  .lc-enable-ai-card pre { background: #f6f9ff; padding: 10px; border-radius: 6px; overflow: auto; font-size: 12px; }
-  /* right-align the close button */
-  .lc-enable-ai-close { display:inline-block; margin-top:8px; padding:6px 10px; border-radius:6px; background:#0a66c2; color:#fff; cursor:pointer; border:none; float:right; }
-  `;
-  document.head.appendChild(style);
+  let style: HTMLStyleElement | null = null;
+  if (!document.getElementById('lc-enable-ai-style')) {
+    style = document.createElement('style');
+    style.id = 'lc-enable-ai-style';
+    style.textContent = `
+      #lc-enable-ai-modal { position: fixed; left: 12px; right: 12px; top: 80px; max-width: 720px; margin: 0 auto; z-index: 2147483647; }
+      .lc-enable-ai-card { background: #fff; border-radius: 8px; box-shadow: 0 12px 40px rgba(11,37,69,0.12); padding: 16px; color: #0b2545; font-family: Inter, Roboto, system-ui, -apple-system, 'Segoe UI', Arial; }
+      .lc-enable-ai-card h3 { margin: 0 0 8px 0; font-size: 16px; }
+      .lc-enable-ai-card p { margin: 6px 0; font-size: 13px; line-height: 1.3; }
+      .lc-enable-ai-card pre { background: #f6f9ff; padding: 10px; border-radius: 6px; overflow: auto; font-size: 12px; }
+      .lc-enable-ai-close { display: inline-block; margin-top: 8px; padding: 6px 10px; border-radius: 6px; background: #0a66c2; color: #fff; cursor: pointer; border: none; float: right; }
+    `;
+    document.head.appendChild(style);
+  }
 
   const modal = document.createElement('div');
   modal.id = 'lc-enable-ai-modal';
@@ -230,70 +193,63 @@ Restart Chrome browser to apply changes.
   `;
   card.appendChild(body);
 
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'lc-enable-ai-close';
-  closeBtn.textContent = 'Close';
-  closeBtn.onclick = () => {
-    try { modal.remove(); } catch (e) { /* ignore */ }
-    try { style.remove(); } catch (e) { /* ignore */ }
+  const closeButton = document.createElement('button');
+  closeButton.className = 'lc-enable-ai-close';
+  closeButton.textContent = 'Close';
+  closeButton.onclick = () => {
+    modal.remove();
+    style?.remove();
   };
-  card.appendChild(closeBtn);
+  card.appendChild(closeButton);
 
   modal.appendChild(card);
   document.body.appendChild(modal);
-  // focus the close button for accessibility
-  closeBtn.focus();
+  closeButton.focus();
+}
+
+function extractGeneratedText(response: any): string {
+  if (response?.output_text) return response.output_text.trim();
+  if (response && Array.isArray(response.output) && response.output.length) {
+    return response.output
+      .map((outputItem: any) => (outputItem.content || []).map((contentItem: any) => contentItem.text || '').join(''))
+      .join('\n')
+      .trim();
+  }
+
+  return '';
 }
 
 async function generateAndInsertComment(postEl: HTMLElement | null) {
   const postText = extractPostText(postEl);
-  if (!postText) {
-    // generation aborted: no post text was extracted
-    return;
-  }
-
-  // starting comment generation
+  if (!postText) return;
 
   const buttons = Array.from((postEl || document).querySelectorAll('button')) as HTMLButtonElement[];
-  const commentBtn = buttons.find(b => {
-    const a = (b.getAttribute && b.getAttribute('aria-label')) || '';
-    const text = ((b.innerText || '') + ' ' + a).toLowerCase();
-    return text.includes('comment');
-  });
-
+  const commentButton = buttons.find(isCommentButton);
   let composer = findCommentComposer(postEl);
 
-  // generation targets resolved
-
   if (!document.getElementById('lc-spinner-style')) {
-    const s = document.createElement('style');
-    s.id = 'lc-spinner-style';
-    s.textContent = `
-      .lc-commenting-state { display:inline-flex; align-items:center; gap:6px; font-size: inherit; color: inherit; }
-      .lc-spinner { display:inline-block; width:14px; height:14px; border:2px solid rgba(0,0,0,0.15); border-top-color:currentColor; border-radius:50%; animation:lc-spin 800ms linear infinite; vertical-align:middle; }
-      .lc-spinner-text { display:inline-block; line-height:1; }
+    const style = document.createElement('style');
+    style.id = 'lc-spinner-style';
+    style.textContent = `
+      .lc-commenting-state { display: inline-flex; align-items: center; gap: 6px; font-size: inherit; color: inherit; }
+      .lc-spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(0,0,0,0.15); border-top-color: currentColor; border-radius: 50%; animation: lc-spin 800ms linear infinite; vertical-align: middle; }
+      .lc-spinner-text { display: inline-block; line-height: 1; }
       @keyframes lc-spin { to { transform: rotate(360deg); } }
     `;
-    document.head.appendChild(s);
+    document.head.appendChild(style);
   }
 
-  if (commentBtn) {
-    try {
-      setCommentButtonLoadingState(commentBtn);
-    } catch (e) { /* ignore */ }
-  }
+  if (commentButton) setCommentButtonLoadingState(commentButton);
 
   const restoreUI = () => {
-    if (commentBtn) {
-      restoreCommentButtonState(commentBtn);
-    }
+    if (commentButton) restoreCommentButtonState(commentButton);
   };
 
   try {
     const settings = await new Promise<{ commentTone?: string; commentPrompt?: string }>((resolve) => {
       try {
         chrome.storage.sync.get({ commentTone: 'friendly', commentPrompt: '' }, (items: any) => resolve(items || {}));
-      } catch (e) {
+      } catch {
         resolve({ commentTone: 'friendly', commentPrompt: '' });
       }
     });
@@ -301,44 +257,41 @@ async function generateAndInsertComment(postEl: HTMLElement | null) {
     const tone = settings.commentTone || 'friendly';
     const customPrompt = settings.commentPrompt || '';
     const defaultPrompt = 'Write a short, friendly, professional LinkedIn comment (1-2 sentences) in response to the following post content. Keep it positive and concise. Return only the comment text.';
-    const basePrompt = customPrompt.trim().length ? customPrompt : defaultPrompt;
-    const prompt = `${basePrompt}\n\nTone: ${tone}\n\nPost content:\n${postText}`;
-
-    // prompt assembled
+    const prompt = `${customPrompt.trim().length ? customPrompt : defaultPrompt}\n\nTone: ${tone}\n\nPost content:\n${postText}`;
 
     let comment = '';
-    const LM = (globalThis as any).LanguageModel;
-    if (typeof LM !== 'undefined' && LM) {
-      const session = await LM.create();
+    const globalAny = globalThis as any;
+    const languageModel = globalAny.LanguageModel;
+
+    if (typeof languageModel !== 'undefined' && languageModel) {
+      const session = await languageModel.create();
       try {
         const result = await session.prompt(prompt);
         comment = (result || '').toString().trim();
       } finally {
         if (session && typeof session.destroy === 'function') {
-          try { await session.destroy(); } catch (e) { /* ignore */ }
+          try {
+            await session.destroy();
+          } catch {
+          }
         }
       }
     } else {
       const chromeAny = chrome as any;
       if (chromeAny.ai && typeof chromeAny.ai.generate === 'function') {
         const response = await chromeAny.ai.generate({ model: 'gen-1', prompt, max_output_tokens: 256 });
-        if (response && response.output_text) comment = response.output_text.trim();
-        else if (response && Array.isArray(response.output) && response.output.length) {
-          comment = response.output.map((o: any) => (o.content || []).map((c: any) => c.text || '').join('')).join('\n').trim();
-        }
+        comment = extractGeneratedText(response);
       } else {
         throw new Error('No compatible built-in AI API available');
       }
     }
 
     if (!comment) {
-      // AI returned an empty comment
       restoreUI();
       return;
     }
 
     if (!composer) {
-      // composer missing before insertion, wait for it to render
       composer = await waitForCommentComposer(postEl, 5000);
     }
 
@@ -350,47 +303,40 @@ async function generateAndInsertComment(postEl: HTMLElement | null) {
 
     try {
       if ((composer as any).isContentEditable) {
-        // inserting into contenteditable composer
         (composer as HTMLElement).focus();
         (composer as HTMLElement).innerText = comment;
         composer.dispatchEvent(new InputEvent('input', { bubbles: true }));
       } else if (composer.tagName === 'TEXTAREA' || composer.tagName === 'INPUT') {
-        // inserting into input/textarea composer
         (composer as HTMLInputElement).value = comment;
         composer.dispatchEvent(new Event('input', { bubbles: true }));
       } else {
-        // inserting via textContent fallback
         composer.textContent = comment as string;
       }
-      // comment insertion complete
-    } catch (e) {
-      console.warn('Failed to insert comment into composer', e);
-      // comment insertion failed
+    } catch (error) {
+      console.warn('Failed to insert comment into composer', error);
     }
-  } catch (err) {
-    console.warn('AI generation error:', err);
-    // AI generation failed
+  } catch (error) {
+    console.warn('AI generation error:', error);
   } finally {
     restoreUI();
   }
 }
 
-// Observe for comment button clicks across the feed
-document.addEventListener('click', (e) => {
-  const target = (e.target as HTMLElement | null);
-  const btn = target && target.closest ? target.closest('button') as HTMLButtonElement | null : null;
-  if (!btn) return;
-  if (isCommentButton(btn)) {
-    // comment button click detected
-    const post = findPostContainer(btn);
-    if (post) {
-      showTransientNotice('Generating comment...');
-      if (!isBuiltinAIAvailable()) {
-        showTransientNotice('Chrome built-in AI is unavailable in this context.', 'error');
-        showEnableAIModal();
-        return;
-      }
-      generateAndInsertComment(post);
-    }
+document.addEventListener('click', (event) => {
+  const target = event.target as HTMLElement | null;
+  const button = target?.closest ? (target.closest('button') as HTMLButtonElement | null) : null;
+  if (!button || !isCommentButton(button)) return;
+
+  const post = findPostContainer(button);
+  if (!post) return;
+
+  showTransientNotice('Generating comment...');
+
+  if (!isBuiltinAIAvailable()) {
+    showTransientNotice('Chrome built-in AI is unavailable in this context.', 'error');
+    showEnableAIModal();
+    return;
   }
+
+  generateAndInsertComment(post);
 }, true);

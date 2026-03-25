@@ -1,6 +1,9 @@
 /// <reference types="chrome" />
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+
+const DEFAULT_TONE = 'friendly';
+const DEFAULT_PROMPT = 'Write a short, friendly, professional LinkedIn comment (1-2 sentences) in response to the following post content. Keep it positive and concise.';
 
 const styles = {
   container: {
@@ -15,6 +18,15 @@ const styles = {
     borderRadius: 8,
     boxShadow: '0 6px 18px rgba(11,37,69,0.08)',
     padding: 14,
+  },
+  notice: {
+    marginBottom: 12,
+    padding: '10px 12px',
+    borderRadius: 8,
+    background: '#f3f6fb',
+    color: '#16325c',
+    fontSize: 13,
+    lineHeight: 1.4,
   },
   header: {
     fontSize: 16,
@@ -69,91 +81,67 @@ const styles = {
 };
 
 const Popup = () => {
-  const [tone, setTone] = useState<string>('friendly');
-  const [promptText, setPromptText] = useState<string>('Write a short, friendly, professional LinkedIn comment (1-2 sentences) in response to the following post content. Keep it positive and concise.');
+  const [tone, setTone] = useState<string>(DEFAULT_TONE);
+  const [promptText, setPromptText] = useState<string>(DEFAULT_PROMPT);
   const [aiAvailable, setAIAvailable] = useState<boolean | null>(null);
-  const [dismissed, setDismissed] = useState(false);
-  const [status, setStatus] = useState<string>("");
+  const [status, setStatus] = useState('');
   const statusTimerRef = useRef<number | null>(null);
 
-  // Load saved prompt and tone on popup open
   useEffect(() => {
     chrome.storage.sync.get(
-      { commentTone: 'friendly', commentPrompt: promptText },
+      { commentTone: DEFAULT_TONE, commentPrompt: DEFAULT_PROMPT },
       (items: any) => {
-        if (items.commentTone) setTone(items.commentTone);
-        if (items.commentPrompt) setPromptText(items.commentPrompt);
+        setTone(items.commentTone || DEFAULT_TONE);
+        setPromptText(items.commentPrompt || DEFAULT_PROMPT);
       }
     );
   }, []);
 
-  // Check built-in AI availability for this browser and show instructions if missing
   useEffect(() => {
     try {
-      const gg = (globalThis as any);
-      const available = (typeof gg.LanguageModel !== 'undefined' && gg.LanguageModel) || ((chrome as any)?.ai && typeof (chrome as any).ai.generate === 'function');
+      const globalAny = globalThis as any;
+      const available = (typeof globalAny.LanguageModel !== 'undefined' && globalAny.LanguageModel) || ((chrome as any)?.ai && typeof (chrome as any).ai.generate === 'function');
       setAIAvailable(Boolean(available));
-    } catch (e) {
+    } catch {
       setAIAvailable(false);
     }
   }, []);
-
-  const saveSettings = () => {
-    // optimistic feedback: show immediately so user sees a response even if storage is slow
-    setStatus('Settings saved.');
-    if (statusTimerRef.current) window.clearTimeout(statusTimerRef.current);
-    statusTimerRef.current = window.setTimeout(() => setStatus(''), 1500);
-    chrome.storage.sync.set({ commentTone: tone, commentPrompt: promptText }, () => {
-      // settings saved
-    });
-  };
-
-  const resetDefaults = () => {
-    const defaultTone = 'friendly';
-    const defaultPrompt = 'Write a short, friendly, professional LinkedIn comment (1-2 sentences) in response to the following post content. Keep it positive and concise.';
-    setTone(defaultTone);
-    setPromptText(defaultPrompt);
-    // optimistic feedback for reset as well
-    setStatus('Settings reset to defaults.');
-    if (statusTimerRef.current) window.clearTimeout(statusTimerRef.current);
-    statusTimerRef.current = window.setTimeout(() => setStatus(''), 1500);
-    chrome.storage.sync.set({ commentTone: defaultTone, commentPrompt: defaultPrompt }, () => {
-      // settings reset to defaults
-    });
-  };
 
   useEffect(() => {
     return () => {
       if (statusTimerRef.current) window.clearTimeout(statusTimerRef.current);
     };
   }, []);
-  // If AI is unavailable and the user hasn't dismissed the notice, render only the instructions.
-  if (aiAvailable === false && !dismissed) {
-    return (
-      <div style={{ ...styles.container, width: 420 }}>
-        <div style={styles.card}>
-          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>Enable Chrome built-in AI features</div>
-          <div style={{ fontSize: 13, marginBottom: 12 }}>This extension requires Chrome's built-in Translation API and Gemini Nano AI (Chrome v138+). Please enable the platform flags and components listed below, then restart Chrome.</div>
 
-          <ol style={{ fontSize: 13, lineHeight: 1.4, paddingLeft: 18 }}>
-            <li>Download and install a Chrome build that includes built-in AI (v138+).</li>
-            <li>Open <code>chrome://flags/#enable-experimental-web-platform-features</code> and enable "Experimental Web Platform features".</li>
-            <li>Open <code>chrome://flags/#translation-api</code> and enable the Translation API flag.</li>
-            <li>Open <code>chrome://flags/#language-detection-api</code> and enable the Language Detection API flag.</li>
-            <li>Open <code>chrome://flags/#prompt-api-for-gemini-nano</code> and enable the Prompt API for Gemini Nano.</li>
-            <li>Open <code>chrome://flags/#optimization-guide-on-device-model</code> and enable the Optimization Guide on Device Model flag.</li>
-            <li>Visit <code>chrome://components</code>, locate "Optimization Guide On Device Model" (or similar) and update it if an update is available.</li>
-            <li>Restart Chrome to apply all changes.</li>
-          </ol>
-        </div>
-      </div>
-    );
-  }
+  const flashStatus = (message: string) => {
+    setStatus(message);
+    if (statusTimerRef.current) window.clearTimeout(statusTimerRef.current);
+    statusTimerRef.current = window.setTimeout(() => setStatus(''), 1500);
+  };
+
+  const saveSettings = () => {
+    flashStatus('Settings saved.');
+    chrome.storage.sync.set({ commentTone: tone, commentPrompt: promptText }, () => {
+    });
+  };
+
+  const resetDefaults = () => {
+    setTone(DEFAULT_TONE);
+    setPromptText(DEFAULT_PROMPT);
+    flashStatus('Settings reset to defaults.');
+    chrome.storage.sync.set({ commentTone: DEFAULT_TONE, commentPrompt: DEFAULT_PROMPT }, () => {
+    });
+  };
 
   return (
     <div style={styles.container}>
       <div style={styles.card}>
         <div style={styles.header}>LinkedIn Commentator</div>
+        {aiAvailable === false && (
+          <div style={styles.notice}>
+            Chrome built-in AI is unavailable in this context. You can still edit and save settings here.
+          </div>
+        )}
 
         <div>
           <label style={styles.label}>Tone</label>
